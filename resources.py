@@ -4,7 +4,8 @@ exomes_interval_mt_path = "gs://ccdg-30day-temp/dking/iG4Vz/total-final-result.m
 
 def get_ccdg_vds_path(data_type: str = "genomes") -> str:
     """
-    Return path to CCDG vds
+    Return path to CCDG VDS.
+
     :param data_type: Whether data is from genomes or exomes, default is genomes
     :return: path to CCDG vds
     """
@@ -16,7 +17,8 @@ def get_ccdg_vds_path(data_type: str = "genomes") -> str:
 
 def get_sample_qc_root(data_type: str = "genomes", mt: bool = False) -> str:
     """
-    Return path to CCDG sample QC root folder
+    Return path to CCDG sample QC root folder.
+
     :param data_type: Whether data is from genomes or exomes, default is 'genomes'
     :param mt: Whether path is for a MatrixTable, default is False
     :return: root of CCDG sample QC path
@@ -26,7 +28,8 @@ def get_sample_qc_root(data_type: str = "genomes", mt: bool = False) -> str:
 
 def get_sample_manifest_ht(data_type: str = "exomes") -> str:
     """
-    Return path to CCDG sample manifest table
+    Return path to CCDG sample manifest table.
+
     :param data_type: Whether data is for genomes or exomes, default is 'genomes'
     :return: path to CCDG sample manifest table
     """
@@ -37,8 +40,9 @@ def get_sample_manifest_ht(data_type: str = "exomes") -> str:
 
 def get_pca_variants_path_ht(ld_pruned: bool = True, data: str = "ccdg_genomes") -> str:
     """
-    Return path to filtered variants
-    :param ld_pruned: Whether the variatns have been ld pruned
+    Return path to filtered variants.
+
+    :param ld_pruned: Whether the variants have been ld pruned
     :return: path to filtered variant ht
     """
     ld_pruning_flag = f"{data}_ld_pruned" if ld_pruned else "pre_ld_pruning"
