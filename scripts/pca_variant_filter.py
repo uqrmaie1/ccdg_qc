@@ -110,9 +110,12 @@ def exomes_qc_intervals_ht(
     return int_ht
 
 
+# Note: this was previous QC variant filtering method https://github.com/broadinstitute/gnomad_methods/blob/35066ffc01d63ac2d7b20e069ea6703013ae9da7/gnomad/sample_qc/pipeline.py#L110
 # TODO: Do we want to filter out lcrs and segdups?
 # TODO: How to handle adj filtering?
-# TODO: Might need to think about adding in a few extra options to reuse already created files so we can add in an option to only do the ld prune after other MAF/callrate filters is this properly handled by `read_if_exist` or do we need more?
+# TODO: Variants passing hard thresholds? QD >= 2, FS <= 60 and MQ >= 30
+# TODO: inbreeding_coeff_threshold and min_hardy_weinberg_threshold (needs to be done on dense)?
+# TODO: Might need to think about adding in a few extra options to reuse already created files so we can add in an option to only do the ld prune after other MAF/callrate filters. Is this properly handled by `read_if_exist` or do we need more?
 # TODO: Rethink names of functions, files, and parameters
 def determine_pca_variants(
     autosomes_only: bool = True,
@@ -121,7 +124,7 @@ def determine_pca_variants(
     gnomad_v3_ac_filter: Optional[int] = None,
     high_qual_ccdg_exome_interval_only: bool = False,
     high_qual_ukbb_exome_interval_only: bool = False,
-    af_cutoff: float = 0.001,
+    af_cutoff: float = 0.001,  # TODO: Konrad mentioned that he might want to lower this
     callrate_cutoff: float = 0.99,
     ccdg_exome_callrate_cutoff: float = 0.99,  # TODO: What parameter should this start with?
     ukbb_exome_callrate_cutoff: float = 0.99,  # TODO: What parameter should this start with?
@@ -177,11 +180,25 @@ def determine_pca_variants(
         get_ccdg_vds_path("exomes")
     ).variant_data.count_cols()
 
-    def _pre_densify_filter(data_type):
+    def _initial_filter(data_type):
         """
-        Wrapper function to get ccdg vds with desired filtering.
+        Get Table of CCDG variants passing desired filters.
 
-        :return: ccdg vds with chosen filters
+        Possible filters are:
+            - Autosomes only
+            - SNVs only
+            - gnomAD v3.1.2 AC filter
+            - CCDG high quality exome intervals
+            - UK Biobank high quality exome intervals
+
+        After densification of the VDS, rows are annotated with:
+            - ccdg_{data_type}_was_split
+            - ccdg_{data_type}_AC
+            - ccdg_{data_type}_AN
+
+        The filtered and annotated rows are returned as a Table and are also checkpointed
+
+        :return: Table of CCDG filtered variants
         """
         logger.info(
             "Loading CCDG %s VDS and splitting multi-allelics for initial filtering steps...",
@@ -265,8 +282,8 @@ def determine_pca_variants(
         "Creating Table with joint gnomAD v3.1.2 and CCDG genome allele frequencies and callrate...",
         data_type,
     )
-    ccdg_exomes_ht = _pre_densify_filter("exomes")
-    ccdg_genomes_ht = _pre_densify_filter("genomes")
+    ccdg_exomes_ht = _initial_filter("exomes")
+    ccdg_genomes_ht = _initial_filter("genomes")
     ht = ccdg_exomes_ht.join(ccdg_genomes_ht, how="inner")
     ht = ht.annotate(**gnomad_ht[mt.row_key], **ukbb_ht[mt.row_key])
     ht = ht.annotate(
@@ -304,6 +321,12 @@ def determine_pca_variants(
         & (ht.ukbb_AN / (ukbb_exome_count * 2) > ukbb_exome_callrate_cutoff)
     )
     ht = ht.annotate_globals(
+        autosomes_only=autosomes_only,
+        snv_only=snv_only,
+        bi_allelic_only=bi_allelic_only,
+        gnomad_v3_ac_filter=gnomad_v3_ac_filter,
+        high_qual_ccdg_exome_interval_only=high_qual_ccdg_exome_interval_only,
+        high_qual_ukbb_exome_interval_only=high_qual_ukbb_exome_interval_only,
         af_cutoff=af_cutoff,
         callrate_cutoff=callrate_cutoff,
         ccdg_exome_callrate_cutoff=ccdg_exome_callrate_cutoff,
@@ -333,7 +356,7 @@ def determine_pca_variants(
             )
 
         ht = hl.ld_prune(mt.GT, r2=ld_r2)
-        ht = ht.annotate_globals(ld_r2=ld_r2, ld_pruning_dataset=ld_pruning_dataset,)
+        ht = ht.annotate_globals(ld_r2=ld_r2, ld_pruning_dataset=ld_pruning_dataset)
         ht.checkpoint(
             get_pca_variants_path_ht(data=ld_pruning_dataset, ld_pruned=True),
             overwrite=overwrite,
@@ -378,7 +401,7 @@ if __name__ == "__main__":
         "--gnomad-v3-ac-filter",
         type=int,
         help="Filter to variants with AC above this value in gnomAD v3",
-        default=None,
+        default=10,
     )
     parser.add_argument(
         "--high-qual-ccdg-interval-only",
@@ -420,6 +443,7 @@ if __name__ == "__main__":
         type=str,
         help="Dataset to apply LD pruning with",
         default="ccdg_genomes",
+        choices=["ccdg_genomes", "gnomad_genomes"]
     )
     parser.add_argument("--ld-r2", type=float, help="LD pruning cutoff", default=0.1)
     parser.add_argument("--read-if-exist", help="Read if exist", action="store_true")
