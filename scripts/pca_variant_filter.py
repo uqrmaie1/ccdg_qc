@@ -112,8 +112,6 @@ def exomes_qc_intervals_ht(
 
 
 # Note: this was previous QC variant filtering method https://github.com/broadinstitute/gnomad_methods/blob/35066ffc01d63ac2d7b20e069ea6703013ae9da7/gnomad/sample_qc/pipeline.py#L110
-# TODO: Do we want to filter out lcrs and segdups?
-# TODO: How to handle adj filtering?
 # TODO: Variants passing hard thresholds? QD >= 2, FS <= 60 and MQ >= 30. I will evaluate on gnomAD v3
 # TODO: Might need to think about adding in a few extra options to reuse already created files so we can add in an option to only do the ld prune after other MAF/callrate filters. Is this properly handled by `read_if_exist` or do we need more?
 # TODO: Rethink names of functions, files, and parameters
