@@ -143,10 +143,10 @@ def determine_pca_variants(
     :param gnomad_v3_ac_filter: Optional lower bound of AC for variants in gnomAD v3 genomes
     :param high_qual_ccdg_exome_interval_only: Whether to filter to high quality intervals in CCDG exomes
     :param high_qual_ukbb_exome_interval_only: Whether to filter to high quality intervals in UKBB 455K exomes
-    :param af_cutoff: lower bound for combined MAF computed from CCDG and gnomAD v3 genomes
-    :param callrate_cutoff: lowr bound for combined callrate computed from CCDG and gnomAD v3 genomes
-    :param ccdg_exome_callrate_cutoff: lower bound for CCDG exomes callrate
-    :param ukbb_exome_callrate_cutoff: lower bound for UKBB exomes callrate
+    :param af_cutoff: Lower bound for combined MAF computed from CCDG and gnomAD v3 genomes
+    :param callrate_cutoff: Lower bound for combined callrate computed from CCDG and gnomAD v3 genomes
+    :param ccdg_exome_callrate_cutoff: Lower bound for CCDG exomes callrate
+    :param ukbb_exome_callrate_cutoff: Lower bound for UKBB exomes callrate
     :param ld_pruning: Whether to conduct LD pruning
     :param ld_pruning_dataset: Which dataset is used for LD pruning, 'ccdg_genomes' or 'gnomAD_genomes'
     :param ld_r2: LD pruning cutoff
@@ -166,6 +166,8 @@ def determine_pca_variants(
         ukbb_AC=gnomad_ht.freq[0].AC, ukbb_AN=gnomad_ht.freq[0].AN,
     )
     ukbb_meta_ht = hl.read_table(ukbb_meta_ht_path("broad", 7))
+
+    # Only count samples used in the UK Biobank exome frequency calculations
     ukbb_exome_count = ukbb_meta_ht.filter(
         ukbb_meta_ht.sample_filters.high_quality
         & hl.is_defined(mt.meta.ukbb_meta.batch)
