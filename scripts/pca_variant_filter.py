@@ -59,7 +59,6 @@ def exomes_qc_intervals_ht(
     broad_prop_lower: float = 0.9,
     base_prop_lower: float = 0.5,
     overwrite: bool = False,
-    read_if_exist: bool = True,
 ) -> hl.Table:
     """
     Filter to high quality intervals for exomes QC.
@@ -67,7 +66,6 @@ def exomes_qc_intervals_ht(
     :param broad_prop_lower: Lower bound for proportion of broad samples defined per interval
     :param base_prop_lower: Lower bound for proportion of bases defined per interval per sample
     :param overwrite: Whether to overwrite CCDG exomes interval QC HT
-    :param read_if_exist: Whether to read existing CCDG exomes interval QC HT
     :return: high quality CCDG exomes interval table
     """
     ht = get_sample_manifest_ht("exomes")
@@ -105,7 +103,7 @@ def exomes_qc_intervals_ht(
     int_ht = int_mt.rows().checkpoint(
         f'{get_sample_qc_root(data_type="exomes", mt=False)}/ccdg_exomes_high_qual_intervals.ht',
         overwrite=overwrite,
-        _read_if_exists=read_if_exist,
+        _read_if_exists=(not overwrite),
     )
 
     return int_ht
@@ -134,7 +132,6 @@ def determine_pca_variants(
     ld_pruning: bool = True,
     ld_pruning_dataset: str = "ccdg_genomes",
     ld_r2: float = 0.1,
-    read_if_exist: bool = True,
     overwrite: bool = True,
 ) -> None:
     """
@@ -158,7 +155,6 @@ def determine_pca_variants(
     :param ld_pruning: Whether to conduct LD pruning
     :param ld_pruning_dataset: Which dataset is used for LD pruning, 'ccdg_genomes' or 'gnomAD_genomes'
     :param ld_r2: LD pruning cutoff
-    :param read_if_exist: Whether to read existing variant HT
     :param overwrite: Whether to overwrite variant HT
     :return: Table with desired variants for PCA
     """
@@ -181,7 +177,7 @@ def determine_pca_variants(
             ),
         )
 
-    ukbb_ht = ukbb_release_ht_path("broad", 7)
+    ukbb_ht = hl.read_table(ukbb_release_ht_path("broad", 7))
     ukbb_ht = ukbb_ht.select(
         ukbb_AC=gnomad_ht.freq[0].AC, ukbb_AN=gnomad_ht.freq[0].AN,
     )
@@ -305,7 +301,7 @@ def determine_pca_variants(
         ht = mt.rows().checkpoint(
             f"{get_sample_qc_root(data_type=data_type, mt=False)}/variant_ccdg_{data_type}_af_callrate.ht",
             overwrite=overwrite,
-            _read_if_exists=read_if_exist,
+            _read_if_exists=(not overwrite),
         )
 
         return ht
@@ -330,7 +326,7 @@ def determine_pca_variants(
     ht = ht.checkpoint(
         f"{get_sample_qc_root(data_type='', mt=False)}ancestry_pca_joint.ht",
         overwrite=overwrite,
-        _read_if_exists=read_if_exist,
+        _read_if_exists=(not overwrite),
     )
 
     logger.info(
@@ -385,7 +381,7 @@ def determine_pca_variants(
     ht.filter(variant_filter_expr).checkpoint(
         get_pca_variants_path_ht(ld_pruned=False),
         overwrite=overwrite,
-        _read_if_exists=read_if_exist,
+        _read_if_exists=(not overwrite),
     )
 
     if ld_pruning:
@@ -410,7 +406,7 @@ def determine_pca_variants(
         ht.checkpoint(
             get_pca_variants_path_ht(data=ld_pruning_dataset, ld_pruned=True),
             overwrite=overwrite,
-            _read_if_exists=read_if_exist,
+            _read_if_exists=(not overwrite),
         )
 
 
@@ -433,7 +429,6 @@ def main(args):
         ld_pruning=~args.not_ld_pruning,
         ld_pruning_dataset=args.ld_pruning_dataset,
         ld_r2=args.ld_r2,
-        read_if_exist=args.read_if_exist,
         overwrite=args.overwrite,
     )
 
@@ -510,7 +505,6 @@ if __name__ == "__main__":
         choices=["ccdg_genomes", "gnomad_genomes"],
     )
     parser.add_argument("--ld-r2", type=float, help="LD pruning cutoff", default=0.1)
-    parser.add_argument("--read-if-exist", help="Read if exist", action="store_true")
     parser.add_argument("--overwrite", help="Overwrite", action="store_true")
     args = parser.parse_args()
     main(args)
