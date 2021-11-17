@@ -5,6 +5,7 @@ from typing import Optional, Union
 import hail as hl
 
 from gnomad.resources.grch38.gnomad import public_release as gnomad_public_release
+from gnomad.utils.filtering import filter_low_conf_regions, filter_to_adj
 from gnomad.utils.sparse_mt import densify_sites, filter_ref_blocks
 from gnomad.utils.reference_genome import get_reference_genome
 from gnomad_qc.resources.annotations import (
@@ -113,21 +114,25 @@ def exomes_qc_intervals_ht(
 # Note: this was previous QC variant filtering method https://github.com/broadinstitute/gnomad_methods/blob/35066ffc01d63ac2d7b20e069ea6703013ae9da7/gnomad/sample_qc/pipeline.py#L110
 # TODO: Do we want to filter out lcrs and segdups?
 # TODO: How to handle adj filtering?
-# TODO: Variants passing hard thresholds? QD >= 2, FS <= 60 and MQ >= 30
-# TODO: inbreeding_coeff_threshold and min_hardy_weinberg_threshold (needs to be done on dense)?
+# TODO: Variants passing hard thresholds? QD >= 2, FS <= 60 and MQ >= 30. I will evaluate on gnomAD v3
 # TODO: Might need to think about adding in a few extra options to reuse already created files so we can add in an option to only do the ld prune after other MAF/callrate filters. Is this properly handled by `read_if_exist` or do we need more?
 # TODO: Rethink names of functions, files, and parameters
 def determine_pca_variants(
     autosomes_only: bool = True,
     snv_only: bool = True,
     bi_allelic_only: bool = True,
-    gnomad_v3_ac_filter: Optional[int] = None,
+    adj_only: bool = True,
+    min_gnomad_v3_ac: Optional[int] = None,
     high_qual_ccdg_exome_interval_only: bool = False,
     high_qual_ukbb_exome_interval_only: bool = False,
-    af_cutoff: float = 0.001,  # TODO: Konrad mentioned that he might want to lower this
-    callrate_cutoff: float = 0.99,
-    ccdg_exome_callrate_cutoff: float = 0.99,  # TODO: What parameter should this start with?
-    ukbb_exome_callrate_cutoff: float = 0.99,  # TODO: What parameter should this start with?
+    min_joint_af: float = 0.001,  # TODO: Konrad mentioned that he might want to lower this
+    min_joint_callrate: float = 0.99,
+    min_inbreeding_coeff_threshold: Optional[float] = -0.8,
+    min_hardy_weinberg_threshold: Optional[float] = 1e-8,
+    min_ccdg_exome_callrate: float = 0.99,  # TODO: What parameter should this start with?
+    min_ukbb_exome_callrate: float = 0.99,  # TODO: What parameter should this start with?
+    filter_lcr: bool = True,
+    filter_segdup: bool = True,
     ld_pruning: bool = True,
     ld_pruning_dataset: str = "ccdg_genomes",
     ld_r2: float = 0.1,
@@ -140,13 +145,18 @@ def determine_pca_variants(
     :param autosomes_only: Whether to filter to variants in autosomes
     :param snv_only: Whether to filter to SNVs
     :param bi_allelic_only: Whether to filter variants that are bi-allelic in both CCDG and gnomAD v3
-    :param gnomad_v3_ac_filter: Optional lower bound of AC for variants in gnomAD v3 genomes
+    :param adj_only: If set, only ADJ genotypes are kept. This filter is applied before the call rate and AF calculation
+    :param min_gnomad_v3_ac: Optional lower bound of AC for variants in gnomAD v3 genomes
     :param high_qual_ccdg_exome_interval_only: Whether to filter to high quality intervals in CCDG exomes
     :param high_qual_ukbb_exome_interval_only: Whether to filter to high quality intervals in UKBB 455K exomes
-    :param af_cutoff: Lower bound for combined MAF computed from CCDG and gnomAD v3 genomes
-    :param callrate_cutoff: Lower bound for combined callrate computed from CCDG and gnomAD v3 genomes
-    :param ccdg_exome_callrate_cutoff: Lower bound for CCDG exomes callrate
-    :param ukbb_exome_callrate_cutoff: Lower bound for UKBB exomes callrate
+    :param min_joint_af: Lower bound for combined MAF computed from CCDG and gnomAD v3 genomes
+    :param min_joint_callrate: Lower bound for combined callrate computed from CCDG and gnomAD v3 genomes
+    :param min_inbreeding_coeff_threshold: Minimum site inbreeding coefficient to keep. Not applied if set to `None`
+    :param min_hardy_weinberg_threshold: Minimum site HW test p-value to keep. Not applied if set to `None`
+    :param min_ccdg_exome_callrate: Lower bound for CCDG exomes callrate
+    :param min_ukbb_exome_callrate: Lower bound for UKBB exomes callrate
+    :param filter_lcr: Whether to filter LCR regions
+    :param filter_segdup: Whether to filter Segdup regions
     :param ld_pruning: Whether to conduct LD pruning
     :param ld_pruning_dataset: Which dataset is used for LD pruning, 'ccdg_genomes' or 'gnomAD_genomes'
     :param ld_r2: LD pruning cutoff
@@ -160,7 +170,19 @@ def determine_pca_variants(
         gnomad_was_split=gnomad_ht.was_split,
         gnomad_AC=gnomad_ht.freq[0].AC,
         gnomad_AN=gnomad_ht.freq[0].AN,
+        gnomad_genomes_site_inbreeding_coeff=gnomad_ht.info.InbreedingCoeff,
+        gnomad_genomes_homozygote_count=gnomad_ht.freq[0].homozygote_count,
     )
+    if min_hardy_weinberg_threshold is not None:
+        gnomad_ht = gnomad_ht.annotate(
+            gnomad_genomes_hwe=hl.hardy_weinberg_test(
+                (gnomad_ht.AN - gnomad_ht.gnomad_AC) / 2,  # Num hom ref genotypes
+                (gnomad_ht.gnomad_AC - (gnomad_ht.gnomad_genomes_homozygote_count * 2))
+                / 2,  # Num het genotypes
+                gnomad_ht.gnomad_genomes_homozygote_count,  # Num hom alt genotypes
+            ),
+        )
+
     ukbb_ht = ukbb_release_ht_path("broad", 7)
     ukbb_ht = ukbb_ht.select(
         ukbb_AC=gnomad_ht.freq[0].AC, ukbb_AN=gnomad_ht.freq[0].AN,
@@ -221,13 +243,13 @@ def determine_pca_variants(
             logger.info("Filtering CCDG %s VDS to SNVs...", data_type)
             variant_filter_expr &= hl.is_snp(ht.alleles[0], ht.alleles[1])
 
-        if gnomad_v3_ac_filter:
+        if min_gnomad_v3_ac:
             logger.info(
                 "Filtering CCDG %s VDS to gnomAD v3.1.2 variants with adj filtered AC > %d...",
                 data_type,
                 gnomad_v3_ac_filter,
             )
-            variant_filter_expr &= gnomad_ht[ht.key].gnomad_AC > gnomad_v3_ac_filter
+            variant_filter_expr &= gnomad_ht[ht.key].gnomad_AC > min_gnomad_v3_ac
 
         vds = hl.vds.filter_variants(vds, ht.filter(variant_filter_expr), keep=True)
 
@@ -265,13 +287,23 @@ def determine_pca_variants(
 
         logger.info("Densifying filtered CCDG %s VDS...", data_type)
         mt = hl.vds.to_dense_mt(vds)
-        mt = mt.annotate_rows(
-            **{
-                f"ccdg_{data_type}_was_split": mt.was_split,
-                f"ccdg_{data_type}_AC": hl.agg.sum(mt.LGT.n_alt_alleles()),
-                f"ccdg_{data_type}_AN": hl.agg.count_where(hl.is_defined(mt.LGT)) * 2,
-            }
-        )
+        if adj_only:
+            mt = filter_to_adj(mt)
+
+        annotation_expr = {
+            f"ccdg_{data_type}_was_split": mt.was_split,
+            f"ccdg_{data_type}_AC": hl.agg.sum(mt.LGT.n_alt_alleles()),
+            f"ccdg_{data_type}_AN": hl.agg.count_where(hl.is_defined(mt.LGT)) * 2,
+        }
+
+        if min_inbreeding_coeff_threshold is not None:
+            annotation_expr[
+                f"ccdg_{data_type}_site_inbreeding_coeff"
+            ] = bi_allelic_site_inbreeding_expr(mt.GT)
+        if min_hardy_weinberg_threshold is not None:
+            annotation_expr[f"ccdg_{data_type}_hwe"] = hl.agg.hardy_weinberg_test(mt.GT)
+
+        mt = mt.annotate_rows(**annotation_expr)
         ht = mt.rows().checkpoint(
             f"{get_sample_qc_root(data_type=data_type, mt=False)}/variant_ccdg_{data_type}_af_callrate.ht",
             overwrite=overwrite,
@@ -287,7 +319,7 @@ def determine_pca_variants(
     ccdg_exomes_ht = _initial_filter("exomes")
     ccdg_genomes_ht = _initial_filter("genomes")
     ht = ccdg_exomes_ht.join(ccdg_genomes_ht, how="inner")
-    ht = ht.annotate(**gnomad_ht[mt.row_key], **ukbb_ht[mt.row_key])
+    ht = ht.annotate(**gnomad_ht[ht.key], **ukbb_ht[ht.key])
     ht = ht.annotate(
         joint_biallelic=~ht.ccdg_genomes_was_split & ~ht.gnomad_was_split,
         joint_AC=ht.ccdg_genomes_AC + ht.gnomad_AC,
@@ -306,33 +338,51 @@ def determine_pca_variants(
     logger.info(
         "Filtering variants to combined gnomAD v3.1.2 and CCDG genome AF of %d and callrate of %d, CCDG exome callrate "
         "of %d, and UK Biobank exome callrate of %d....",
-        af_cutoff,
-        callrate_cutoff,
-        ccdg_exome_callrate_cutoff,
-        ukbb_exome_callrate_cutoff,
+        min_joint_af,
+        min_joint_callrate,
+        min_ccdg_exome_callrate,
+        min_ukbb_exome_callrate,
     )
 
     variant_filter_expr = True
     if bi_allelic_only:
         variant_filter_expr = ht.joint_biallelic
+    if min_inbreeding_coeff_threshold is not None:
+        variant_filter_expr &= (
+            ht.ccdg_genomes_site_inbreeding_coeff > min_inbreeding_coeff_threshold
+        ) & (ht.gnomad_genomes_site_inbreeding_coeff > min_inbreeding_coeff_threshold)
+    if min_hardy_weinberg_threshold is not None:
+        variant_filter_expr &= (
+            ht.ccdg_genomes_hwe.p_value > min_hardy_weinberg_threshold
+        ) & (ht.gnomad_genomes_hwe.p_value > min_hardy_weinberg_threshold)
 
     variant_filter_expr &= (
-        (ht.joint_AF > af_cutoff)
-        & (ht.joint_callrate > callrate_cutoff)
-        & (ht.ccdg_exome_AN / (ccdg_exome_count * 2) > ccdg_exome_callrate_cutoff)
-        & (ht.ukbb_AN / (ukbb_exome_count * 2) > ukbb_exome_callrate_cutoff)
+        (ht.joint_AF > min_af)
+        & (ht.joint_callrate > min_callrate)
+        & (ht.ccdg_exome_AN / (ccdg_exome_count * 2) > min_ccdg_exome_callrate)
+        & (ht.ukbb_AN / (ukbb_exome_count * 2) > min_ukbb_exome_callrate)
     )
     ht = ht.annotate_globals(
         autosomes_only=autosomes_only,
         snv_only=snv_only,
         bi_allelic_only=bi_allelic_only,
-        gnomad_v3_ac_filter=gnomad_v3_ac_filter,
+        min_gnomad_v3_ac=min_gnomad_v3_ac,
         high_qual_ccdg_exome_interval_only=high_qual_ccdg_exome_interval_only,
         high_qual_ukbb_exome_interval_only=high_qual_ukbb_exome_interval_only,
-        af_cutoff=af_cutoff,
-        callrate_cutoff=callrate_cutoff,
-        ccdg_exome_callrate_cutoff=ccdg_exome_callrate_cutoff,
-        ukbb_exome_callrate_cutoff=ukbb_exome_callrate_cutoff,
+        filter_lcr=filter_lcr,
+        filter_segdup=filter_segdup,
+        min_af=min_joint_af,
+        min_callrate=min_joint_callrate,
+        min_ccdg_exome_callrate=min_ccdg_exome_callrate,
+        min_ukbb_exome_callrate=min_ukbb_exome_callrate,
+        min_inbreeding_coeff_threshold=min_inbreeding_coeff_threshold,
+        min_hardy_weinberg_threshold=min_hardy_weinberg_threshold,
+    )
+    ht = filter_low_conf_regions(
+        ht,
+        filter_lcr=filter_lcr,
+        ilter_decoy=False,  # No decoy for GRCh38
+        filter_segdup=filter_segdup,
     )
     ht.filter(variant_filter_expr).checkpoint(
         get_pca_variants_path_ht(ld_pruned=False),
@@ -370,17 +420,19 @@ def main(args):
     hl.init(log=f"/variant_filter.log")
 
     determine_pca_variants(
-        autosomes_only=args.autosomes_only,
-        bi_allelic_only=args.bi_allelic_only,
-        snv_only=args.snv_only,
-        gnomad_v3_ac_filter=args.gnomad_v3_ac_filter,
-        high_qual_ccdg_exome_interval_only=args.high_qual_ccdg_interval_only,
-        high_qual_ukbb_exome_interval_only=args.high_qual_ukbb_interval_only,
-        af_cutoff=args.af_cutoff,
-        callrate_cutoff=args.callrate_cutoff,
-        ccdg_exome_callrate_cutoff=args.ccdg_exome_callrate_cutoff,
-        ukbb_exome_callrate_cutoff=args.ukbb_exome_callrate_cutoff,
-        ld_pruning=args.ld_pruning,
+        autosomes_only=~args.not_autosomes_only,
+        bi_allelic_only=~args.not_bi_allelic_only,
+        snv_only=~args.not_snv_only,
+        min_gnomad_v3_ac=args.min_gnomad_v3_ac,
+        high_qual_ccdg_exome_interval_only=~args.not_high_qual_ccdg_interval_only,
+        high_qual_ukbb_exome_interval_only=~args.not_high_qual_ukbb_interval_only,
+        filter_lcr=~args.not_filter_lcr,
+        filter_segdup=~args.not_filter_segdup,
+        min_joint_af=args.min_af,
+        min_joint_callrate=args.min_callrate,
+        min_ccdg_exome_callrate=args.min_ccdg_exome_callrate,
+        min_ukbb_exome_callrate=args.min_ukbb_exome_callrate,
+        ld_pruning=~args.not_ld_pruning,
         ld_pruning_dataset=args.ld_pruning_dataset,
         ld_r2=args.ld_r2,
         read_if_exist=args.read_if_exist,
@@ -391,12 +443,14 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--autosomes-only", help="Filter to autosomes", action="store_true"
+        "--not-autosomes-only", help="Do not filter to autosomes", action="store_true"
     )
-    parser.add_argument("--snv-only", help="Filter to SNVs", action="store_true")
     parser.add_argument(
-        "--bi-allelic-only",
-        help="Filter to variants that are bi-allelic in both CCDG and gnomAD v3",
+        "--not-snv-only", help="Do not filter to SNVs", action="store_true"
+    )
+    parser.add_argument(
+        "--not-bi-allelic-only",
+        help="Do not filter to variants that are bi-allelic in both CCDG and gnomAD v3",
         action="store_true",
     )
     parser.add_argument(
@@ -406,23 +460,31 @@ if __name__ == "__main__":
         default=10,
     )
     parser.add_argument(
-        "--high-qual-ccdg-interval-only",
-        help="Filter to high quality interval in CCDG exomes",
+        "--not-high-qual-ccdg-interval-only",
+        help="Do not filter to high quality interval in CCDG exomes",
         action="store_true",
     )
     parser.add_argument(
-        "--high-qual-ukbb-interval-only",
-        help="Filter to high quality interval in UKBB exomes",
+        "--not-high-qual-ukbb-interval-only",
+        help="Do nont filter to high quality interval in UKBB exomes",
         action="store_true",
     )
     parser.add_argument(
-        "--af-cutoff",
+        "--not-filter-lcr", help="Do not filter out LCR regions", action="store_true",
+    )
+    parser.add_argument(
+        "--not-filter-segdup",
+        help="Do not filter out segmental duplications",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--min-af",
         type=float,
         help="Filter to variants with combined MAF above this value",
         default=0.001,
     )
     parser.add_argument(
-        "--callrate-cutoff",
+        "--min-callrate",
         type=float,
         help="Filter to variants with combined callrate above this value",
         default=0.99,
@@ -439,13 +501,15 @@ if __name__ == "__main__":
         help="Filter to variants with callrate above this value in UKBB exomes",
         default=0.99,
     )
-    parser.add_argument("--ld-pruning", help="Apply LD pruning", action="store_true")
+    parser.add_argument(
+        "--not-ld-pruning", help="Apply LD pruning", action="store_true"
+    )
     parser.add_argument(
         "--ld--pruning-dataset",
         type=str,
         help="Dataset to apply LD pruning with",
         default="ccdg_genomes",
-        choices=["ccdg_genomes", "gnomad_genomes"]
+        choices=["ccdg_genomes", "gnomad_genomes"],
     )
     parser.add_argument("--ld-r2", type=float, help="LD pruning cutoff", default=0.1)
     parser.add_argument("--read-if-exist", help="Read if exist", action="store_true")
