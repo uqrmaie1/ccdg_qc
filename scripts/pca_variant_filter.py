@@ -157,7 +157,7 @@ def determine_pca_variants(
         gnomad_AC=gnomad_ht.freq[0].AC,
         gnomad_AN=gnomad_ht.freq[0].AN,
     )
-    ukbb_ht = ukbb_release_ht_path("broad", 7)
+    ukbb_ht = hl.read_table(ukbb_release_ht_path("broad", 7))
     ukbb_ht = ukbb_ht.select(
         ukbb_AC=gnomad_ht.freq[0].AC, ukbb_AN=gnomad_ht.freq[0].AN,
     )
