@@ -41,18 +41,18 @@ def filter_to_autosomes(
     :param mtds: Input MatrixTable/Table/VariantDataset
     :return: MatrixTable/Table/VariantDataset subset to autosomes
     """
-    if isinstance(t, hl.vds.VariantDataset):
-        reference = get_reference_genome(t.variant_data.locus)
+    if isinstance(mtds, hl.vds.VariantDataset):
+        reference = get_reference_genome(mtds.variant_data.locus)
     else:
-        reference = get_reference_genome(t.locus)
+        reference = get_reference_genome(mtds.locus)
     autosomes = hl.parse_locus_interval(
         f"{reference.contigs[0]}-{reference.contigs[21]}", reference_genome=reference
     )
 
-    if isinstance(t, hl.vds.VariantDataset):
-        return hl.vds.filter_intervals(t, [autosomes])
+    if isinstance(mtds, hl.vds.VariantDataset):
+        return hl.vds.filter_intervals(mtds, [autosomes])
     else:
-        return hl.filter_intervals(t, [autosomes])
+        return hl.filter_intervals(mtds, [autosomes])
 
 
 # TODO: Might need to rethink how we define "high quality" CCDG exomes
