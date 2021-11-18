@@ -38,6 +38,38 @@ def get_sample_manifest_ht(data_type: str = "exomes") -> str:
     return ht
 
 
+def get_pre_filtered_var_ht_path(data_type: str = "genomes"):
+    """
+    Return path to a table of CCDG variants passing desired filters including:
+        - Autosomes only
+        - SNVs only
+        - gnomAD v3.1.2 AC filter
+        - CCDG high quality exome intervals
+        - UK Biobank high quality exome intervals
+    :param data_type: Whether data is from CCDG genomes or exomes, default is genomes
+    :return: path to hard filtered variant table
+    """
+    return f"{get_sample_qc_root(data_type=data_type, mt=False)}/variant_ccdg_{data_type}_pre_filtered.ht"
+
+
+def get_ccdg_interval_qc_ht_path():
+    """
+    Return path to a table of high quality intervals in CCDG exomes:
+
+    :return: path to CCDG exomes high quality intervals
+    """
+    return f'{get_sample_qc_root(data_type="exomes", mt=False)}/ccdg_exomes_high_qual_intervals.ht'
+
+
+def get_joint_pca_variants_ht_path():
+    """
+    Return path to a table of variants with joint gnomAD v3.1.2 and CCDG genome allele frequencies and callrate:
+
+    :return: path to variants with joint gnomAD v3.1.2 and CCDG genome allele frequencies and callrate
+    """
+    return f"{get_sample_qc_root(data_type='', mt=False)}ancestry_pca_joint.ht"
+
+
 def get_pca_variants_path(
     ld_pruned: bool = True, data: str = "ccdg_genomes", mt: bool = False
 ) -> str:

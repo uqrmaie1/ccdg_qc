@@ -17,11 +17,7 @@ from ukbb_qc.resources.basics import release_ht_path as ukbb_release_ht_path
 from ukbb_qc.resources.sample_qc import interval_qc_path as ukbb_interval_qc_path
 from ukbb_qc.resources.sample_qc import meta_ht_path as ukbb_meta_ht_path
 
-from ccdg_qc.resources.resources import (
-    get_ccdg_vds_path,
-    get_pca_variants_path,
-    get_sample_manifest_ht,
-)
+from ccdg_qc.resources.resources import *
 
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger("pca_variant_determination")
@@ -102,7 +98,7 @@ def exomes_qc_intervals_ht(
     # Filter intervals
     int_mt = int_mt.filter_rows(int_mt.broad_defined_prop > broad_prop_lower)
     int_ht = int_mt.rows().checkpoint(
-        f'{get_sample_qc_root(data_type="exomes", mt=False)}/ccdg_exomes_high_qual_intervals.ht',
+        get_ccdg_interval_qc_ht_path(),
         overwrite=overwrite,
         _read_if_exists=(not overwrite),
     )
@@ -261,9 +257,7 @@ def determine_pca_variants(
                 "Filtering CCDG %s VDS to high quality CCDG exome intervals...",
                 data_type,
             )
-            interval_qc_ht = (
-                exomes_qc_intervals_ht()
-            )  # TODO: Create a checkpointed HT list of "good" intervals to use here instead
+            interval_qc_ht = hl.read_table(get_ccdg_interval_qc_ht_path())  # TODO: Create a checkpointed HT list of "good" intervals to use here instead
             vds = hl.vds.filter_intervals(
                 vds, intervals=interval_qc_ht.interval.collect(), keep=True
             )
@@ -308,7 +302,7 @@ def determine_pca_variants(
 
         mt = mt.annotate_rows(**annotation_expr)
         ht = mt.rows().checkpoint(
-            f"{get_sample_qc_root(data_type=data_type, mt=False)}/variant_ccdg_{data_type}_af_callrate.ht",
+            get_pre_filtered_var_ht_path(data_type=data_type),
             overwrite=overwrite,
             _read_if_exists=(not overwrite),
         )
@@ -332,7 +326,7 @@ def determine_pca_variants(
         joint_AF=ht.joint_AC / ht.joint_AN, joint_callrate=ht.joint_AN / total_genome_an
     )
     ht = ht.checkpoint(
-        f"{get_sample_qc_root(data_type='', mt=False)}ancestry_pca_joint.ht",
+        get_joint_pca_variants_ht_path(),
         overwrite=overwrite,
         _read_if_exists=(not overwrite),
     )
