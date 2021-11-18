@@ -8,15 +8,15 @@ from gnomad.resources.grch38.gnomad import public_release as gnomad_public_relea
 from gnomad.utils.filtering import filter_low_conf_regions, filter_to_adj
 from gnomad.utils.sparse_mt import densify_sites, filter_ref_blocks
 from gnomad.utils.reference_genome import get_reference_genome
-from gnomad_qc.resources.annotations import (
+from gnomad_qc.v3.resources.annotations import (
     last_END_position as gnomad_last_END_position,
 )
-from gnomad_qc.resources.basics import get_gnomad_v3_mt
+from gnomad_qc.v3.resources.basics import get_gnomad_v3_mt
 from ukbb_qc.resources.basics import release_ht_path as ukbb_release_ht_path
 from ukbb_qc.resources.sample_qc import interval_qc_path as ukbb_interval_qc_path
 from ukbb_qc.resources.sample_qc import meta_ht_path as ukbb_meta_ht_path
 
-from ccdg_qc.resources import (
+from ccdg_qc.resources.resources import (
     get_ccdg_vds_path,
     get_pca_variants_path_ht,
     get_sample_manifest_ht,
