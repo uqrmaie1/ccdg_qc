@@ -31,14 +31,14 @@ logger.setLevel(logging.INFO)
 # TODO: Coordinate with Tim to make a hl.vds.filter_intervals that we can use instead
 # https://github.com/broadinstitute/gnomad_methods/blob/3536f87e249f0804f6762facce468597a9c441c6/gnomad/utils/filtering.py#L180
 def filter_to_autosomes(
-    t: Union[hl.Table, hl.MatrixTable, hl.vds.VariantDataset]
+    mtds: Union[hl.Table, hl.MatrixTable, hl.vds.VariantDataset]
 ) -> Union[hl.Table, hl.MatrixTable, hl.vds.VariantDataset]:
     """
     Filter Table, MatrixTable or VariantDataset to autosome contigs only.
 
     This assumes that the input MT or VDS variant_data MT contains a field named `locus` of type Locus
 
-    :param t: Input MatrixTable/Table/VariantDataset
+    :param mtds: Input MatrixTable/Table/VariantDataset
     :return: MatrixTable/Table/VariantDataset subset to autosomes
     """
     if isinstance(t, hl.vds.VariantDataset):
