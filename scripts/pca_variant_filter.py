@@ -170,7 +170,7 @@ def determine_pca_variants(
     if min_hardy_weinberg_threshold is not None:
         gnomad_ht = gnomad_ht.annotate(
             gnomad_genomes_hwe=hl.hardy_weinberg_test(
-                (gnomad_ht.AN - gnomad_ht.gnomad_AC) / 2,  # Num hom ref genotypes
+                (gnomad_ht.gnomad_AN - gnomad_ht.gnomad_AC) / 2,  # Num hom ref genotypes
                 (gnomad_ht.gnomad_AC - (gnomad_ht.gnomad_genomes_homozygote_count * 2))
                 / 2,  # Num het genotypes
                 gnomad_ht.gnomad_genomes_homozygote_count,  # Num hom alt genotypes
@@ -179,15 +179,15 @@ def determine_pca_variants(
 
     ukbb_ht = hl.read_table(ukbb_release_ht_path("broad", 7))
     ukbb_ht = ukbb_ht.select(
-        ukbb_AC=gnomad_ht.freq[0].AC, ukbb_AN=gnomad_ht.freq[0].AN,
+        ukbb_AC=ukbb_ht.freq[0].AC, ukbb_AN=ukbb_ht.freq[0].AN,
     )
     ukbb_meta_ht = hl.read_table(ukbb_meta_ht_path("broad", 7))
 
     # Only count samples used in the UK Biobank exome frequency calculations
     ukbb_exome_count = ukbb_meta_ht.filter(
         ukbb_meta_ht.sample_filters.high_quality
-        & hl.is_defined(mt.meta.ukbb_meta.batch)
-        & ~mt.meta.sample_filters.related
+        & hl.is_defined(ukbb_meta_ht.ukbb_meta.batch)
+        & ~ukbb_meta_ht.sample_filters.related
     ).count()
 
     logger.info("Getting CCDG genome and exome sample counts...")
