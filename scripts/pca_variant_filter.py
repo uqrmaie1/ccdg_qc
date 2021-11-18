@@ -8,6 +8,7 @@ from gnomad.resources.grch38.gnomad import public_release as gnomad_public_relea
 from gnomad.utils.filtering import filter_low_conf_regions, filter_to_adj
 from gnomad.utils.sparse_mt import densify_sites, filter_ref_blocks
 from gnomad.utils.reference_genome import get_reference_genome
+from gnomad.utils.annotations import bi_allelic_site_inbreeding_expr
 from gnomad_qc.v3.resources.annotations import (
     last_END_position as gnomad_last_END_position,
 )
@@ -231,7 +232,7 @@ def determine_pca_variants(
             data_type,
         )
         vds = hl.vds.read_vds(get_ccdg_vds_path(data_type))
-        vds = hl.vds.split_mulit(vds)
+        vds = hl.vds.split_multi(vds)
 
         if autosomes_only:
             logger.info("Filtering CCDG %s VDS to autosomes...", data_type)
@@ -249,7 +250,7 @@ def determine_pca_variants(
             logger.info(
                 "Filtering CCDG %s VDS to gnomAD v3.1.2 variants with adj filtered AC > %d...",
                 data_type,
-                gnomad_v3_ac_filter,
+                min_gnomad_v3_ac,
             )
             variant_filter_expr &= gnomad_ht[ht.key].gnomad_AC > min_gnomad_v3_ac
 
@@ -274,14 +275,14 @@ def determine_pca_variants(
                 )
 
             logger.info(
-                "Filtering CCDG %s VDS to high quality (>85% of samples with 20X coverage) UK Biobank exome intervals...",
+                "Filtering CCDG %s VDS to high quality (>85%% of samples with 20X coverage) UK Biobank exome intervals...",
                 data_type,
             )
             interval_qc_ht = hl.read_table(
                 ukbb_interval_qc_path("broad", 7, "autosomes")
             )  # Note: freeze 7 is all included in gnomAD v4
             interval_qc_ht = interval_qc_ht.filter(
-                interval_qc_ht[pct_samples_20x] > 0.85
+                interval_qc_ht["pct_samples_20x"] > 0.85
             )
             vds = hl.vds.filter_intervals(
                 vds, intervals=interval_qc_ht.interval.collect(), keep=True
@@ -294,8 +295,8 @@ def determine_pca_variants(
 
         annotation_expr = {
             f"ccdg_{data_type}_was_split": mt.was_split,
-            f"ccdg_{data_type}_AC": hl.agg.sum(mt.LGT.n_alt_alleles()),
-            f"ccdg_{data_type}_AN": hl.agg.count_where(hl.is_defined(mt.LGT)) * 2,
+            f"ccdg_{data_type}_AC": hl.agg.sum(mt.GT.n_alt_alleles()),
+            f"ccdg_{data_type}_AN": hl.agg.count_where(hl.is_defined(mt.GT)) * 2,
         }
 
         if min_inbreeding_coeff_threshold is not None:
@@ -316,7 +317,6 @@ def determine_pca_variants(
 
     logger.info(
         "Creating Table with joint gnomAD v3.1.2 and CCDG genome allele frequencies and callrate...",
-        data_type,
     )
     ccdg_exomes_ht = _initial_filter("exomes")
     ccdg_genomes_ht = _initial_filter("genomes")
@@ -327,7 +327,7 @@ def determine_pca_variants(
         joint_AC=ht.ccdg_genomes_AC + ht.gnomad_AC,
         joint_AN=ht.ccdg_genomes_AN + ht.gnomad_AN,
     )
-    total_genome_an = (gnomad_ht.freq_sample_count + ccdg_genome_count) * 2
+    total_genome_an = hl.eval((gnomad_ht.freq_sample_count[0] + ccdg_genome_count) * 2)
     ht = ht.annotate(
         joint_AF=ht.joint_AC / ht.joint_AN, joint_callrate=ht.joint_AN / total_genome_an
     )
@@ -338,8 +338,8 @@ def determine_pca_variants(
     )
 
     logger.info(
-        "Filtering variants to combined gnomAD v3.1.2 and CCDG genome AF of %d and callrate of %d, CCDG exome callrate "
-        "of %d, and UK Biobank exome callrate of %d....",
+        "Filtering variants to combined gnomAD v3.1.2 and CCDG genome AF of %.3f and callrate of %.2f, CCDG exome callrate "
+        "of %.2f, and UK Biobank exome callrate of %.2f....",
         min_joint_af,
         min_joint_callrate,
         min_ccdg_exome_callrate,
@@ -348,7 +348,7 @@ def determine_pca_variants(
 
     variant_filter_expr = True
     if bi_allelic_only:
-        variant_filter_expr = ht.joint_biallelic
+        variant_filter_expr &= ht.joint_biallelic
     if min_inbreeding_coeff_threshold is not None:
         variant_filter_expr &= (
             ht.ccdg_genomes_site_inbreeding_coeff > min_inbreeding_coeff_threshold
@@ -359,11 +359,14 @@ def determine_pca_variants(
         ) & (ht.gnomad_genomes_hwe.p_value > min_hardy_weinberg_threshold)
 
     variant_filter_expr &= (
-        (ht.joint_AF > min_af)
-        & (ht.joint_callrate > min_callrate)
-        & (ht.ccdg_exome_AN / (ccdg_exome_count * 2) > min_ccdg_exome_callrate)
+        (ht.joint_AF > min_joint_af)
+        & (ht.joint_callrate > min_joint_callrate)
+        & (ht.ccdg_exomes_AN / (ccdg_exome_count * 2) > min_ccdg_exome_callrate)
         & (ht.ukbb_AN / (ukbb_exome_count * 2) > min_ukbb_exome_callrate)
     )
+
+    ht = ht.filter(variant_filter_expr)
+
     ht = ht.annotate_globals(
         autosomes_only=autosomes_only,
         snv_only=snv_only,
@@ -380,13 +383,15 @@ def determine_pca_variants(
         min_inbreeding_coeff_threshold=min_inbreeding_coeff_threshold,
         min_hardy_weinberg_threshold=min_hardy_weinberg_threshold,
     )
+
     ht = filter_low_conf_regions(
         ht,
         filter_lcr=filter_lcr,
-        ilter_decoy=False,  # No decoy for GRCh38
+        filter_decoy=False,  # No decoy for GRCh38
         filter_segdup=filter_segdup,
     )
-    ht.filter(variant_filter_expr).checkpoint(
+
+    ht.checkpoint(
         get_pca_variants_path_ht(ld_pruned=False),
         overwrite=overwrite,
         _read_if_exists=(not overwrite),
