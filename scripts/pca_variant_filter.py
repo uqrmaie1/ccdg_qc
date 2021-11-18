@@ -170,16 +170,24 @@ def determine_pca_variants(
     if min_hardy_weinberg_threshold is not None:
         gnomad_ht = gnomad_ht.annotate(
             gnomad_genomes_hwe=hl.hardy_weinberg_test(
-                (gnomad_ht.gnomad_AN - gnomad_ht.gnomad_AC) / 2,  # Num hom ref genotypes
-                (gnomad_ht.gnomad_AC - (gnomad_ht.gnomad_genomes_homozygote_count * 2))
-                / 2,  # Num het genotypes
+                hl.int32(
+                    (gnomad_ht.gnomad_AN - gnomad_ht.gnomad_AC) / 2
+                ),  # Num hom ref genotypes
+                hl.int32(
+                    (
+                        gnomad_ht.gnomad_AC
+                        - (gnomad_ht.gnomad_genomes_homozygote_count * 2)
+                    )
+                    / 2
+                ),  # Num het genotypes
                 gnomad_ht.gnomad_genomes_homozygote_count,  # Num hom alt genotypes
             ),
         )
 
     ukbb_ht = hl.read_table(ukbb_release_ht_path("broad", 7))
     ukbb_ht = ukbb_ht.select(
-        ukbb_AC=ukbb_ht.freq[0].AC, ukbb_AN=ukbb_ht.freq[0].AN,
+        ukbb_AC=ukbb_ht.freq[0].AC,
+        ukbb_AN=ukbb_ht.freq[0].AN,
     )
     ukbb_meta_ht = hl.read_table(ukbb_meta_ht_path("broad", 7))
 
@@ -463,7 +471,9 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
-        "--not-filter-lcr", help="Do not filter out LCR regions", action="store_true",
+        "--not-filter-lcr",
+        help="Do not filter out LCR regions",
+        action="store_true",
     )
     parser.add_argument(
         "--not-filter-segdup",
