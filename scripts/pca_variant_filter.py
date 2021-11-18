@@ -19,7 +19,7 @@ from ukbb_qc.resources.sample_qc import meta_ht_path as ukbb_meta_ht_path
 
 from ccdg_qc.resources.resources import (
     get_ccdg_vds_path,
-    get_pca_variants_path_ht,
+    get_pca_variants_path,
     get_sample_manifest_ht,
 )
 
@@ -392,14 +392,14 @@ def determine_pca_variants(
     )
 
     ht.checkpoint(
-        get_pca_variants_path_ht(ld_pruned=False),
+        get_pca_variants_path(ld_pruned=False),
         overwrite=overwrite,
         _read_if_exists=(not overwrite),
     )
 
     if ld_pruning:
         logger.info("Creating Table after LD pruning of %s...", ld_pruning_dataset)
-        ht = hl.read_table(get_pca_variants_path_ht(ld_pruned=False))
+        ht = hl.read_table(get_pca_variants_path(ld_pruned=False))
         if ld_pruning_dataset == "ccdg_genomes":
             vds = hl.vds.read_vds(get_ccdg_vds_path("genomes"))
             vds = hl.vds.split_multi(vds)
@@ -417,7 +417,12 @@ def determine_pca_variants(
         ht = hl.ld_prune(mt.GT, r2=ld_r2)
         ht = ht.annotate_globals(ld_r2=ld_r2, ld_pruning_dataset=ld_pruning_dataset)
         ht.checkpoint(
-            get_pca_variants_path_ht(data=ld_pruning_dataset, ld_pruned=True),
+            get_pca_variants_path(ld_pruned=True, data=ld_pruning_dataset),
+            overwrite=overwrite,
+            _read_if_exists=(not overwrite),
+        )
+        mt.filter_rows(hl.is_defined(ht[mt.row_key])).checkpoint(
+            get_pca_variants_path(ld_pruned=True, data=ld_pruning_dataset, mt=True),
             overwrite=overwrite,
             _read_if_exists=(not overwrite),
         )

@@ -38,7 +38,9 @@ def get_sample_manifest_ht(data_type: str = "exomes") -> str:
     return ht
 
 
-def get_pca_variants_path_ht(ld_pruned: bool = True, data: str = "ccdg_genomes") -> str:
+def get_pca_variants_path(
+    ld_pruned: bool = True, data: str = "ccdg_genomes", mt: bool = False
+) -> str:
     """
     Return path to filtered variants.
 
@@ -46,4 +48,4 @@ def get_pca_variants_path_ht(ld_pruned: bool = True, data: str = "ccdg_genomes")
     :return: path to filtered variant ht
     """
     ld_pruning_flag = f"{data}_ld_pruned" if ld_pruned else "pre_ld_pruning"
-    return f'{get_sample_qc_root(data_type="", mt=False)}{ld_pruning_flag}_combined_variants.ht'
+    return f"{get_sample_qc_root(data_type='', mt=mt)}{ld_pruning_flag}_combined_variants.{'mt' if mt else 'ht'}"
