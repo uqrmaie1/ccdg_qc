@@ -46,7 +46,9 @@ def get_qc_vds(
     vds = hl.vds.read_vds(get_vds_path(data_type))
     if (data_type == "exomes") & interval_qc:
         logger.info("Filtering CCDG exomes VDS to high quality intervals...")
-        int_ht = hl.read_table(get_ccdg_results_path(data_type=data_type, result="high_qual_intervals"))
+        int_ht = hl.read_table(
+            get_ccdg_results_path(data_type=data_type, result="high_qual_intervals")
+        )
         vds = hl.vds.filter_intervals(
             vds, intervals=int_ht.interval.collect(), keep=True
         )
@@ -82,7 +84,9 @@ def compute_sample_qc(data_type: str = "genomes") -> hl.Table:
             "bi_allelic": bi_allelic_expr(vds.variant_data),
             "multi_allelic": ~bi_allelic_expr(vds.variant_data),
         },
-        tmp_ht_prefix=get_ccdg_results_path(data_type=data_type, result="sample_qc")[:-3],
+        tmp_ht_prefix=get_ccdg_results_path(data_type=data_type, result="sample_qc")[
+            :-3
+        ],
     )
 
     return sample_qc_ht.repartition(100)
@@ -209,7 +213,9 @@ def main(args):
         relatedness_ht = hl.read_table(
             get_ccdg_results_path(data_type=data_type, result="relatedness")
         )
-        related_samples_to_remove = hl.maximal_independent_set(relartedness_ht.i, pairs.j, False).checkpoint(
+        related_samples_to_remove = hl.maximal_independent_set(
+            relartedness_ht.i, pairs.j, False
+        ).checkpoint(
             get_ccdg_results_path(data_type=data_type, result="related_samples"),
             overwrite=args.overwrite,
         )
@@ -223,21 +229,32 @@ def main(args):
             _read_if_exists=(not args.overwrite),
         )
 
-    if args.pc_project:
+    if args.run_pc_project:
         ## TODO: Rank samples and hard filter samples
-        mt = hl.read_matrix_table(get_pca_variants_path(ld_pruned=True, data=f"ccdg_{data_type}", mt=True))
-        related_ht = hl.read_table(get_ccdg_results_path(data_type=data_type, result="related_samples"))
+        mt = hl.read_matrix_table(
+            get_pca_variants_path(ld_pruned=True, data=f"ccdg_{data_type}", mt=True)
+        )
+        related_ht = hl.read_table(
+            get_ccdg_results_path(data_type=data_type, result="related_samples")
+        )
 
         related_mt = mt.filter_cols(hl.is_defined(related_mt[mt.col_key]), keep=True)
         pca_mt = mt.filter_cols(hl.is_defined(related_mt[mt.col_key]), keep=False)
-        pca_loadings = hl.read_table("gs://gnomad-public-requester-pays/release/3.1/pca/gnomad.v3.1.pca_loadings.ht")
+        pca_loadings = hl.read_table(
+            "gs://gnomad-public-requester-pays/release/3.1/pca/gnomad.v3.1.pca_loadings.ht"
+        )
 
-        pca_ht = hl.experimental.pc_project(pca_mt, pca_loadings.loadings, pca_loadings.pca_af)
+        pca_ht = hl.experimental.pc_project(
+            pca_mt, pca_loadings.loadings, pca_loadings.pca_af
+        )
         pca_mt = pca_mt.annotate_cols(scores=pca_ht[pca_mt.col_key].scores)
 
-        related_ht = hl.experimental.pc_project(related_mt, pca_loadings.loadings, pca_loadings.pca_af)
-        related_mt = related_mt.annotate_cols(scores=related_ht[related_mt.col_key].scores)
-
+        related_ht = hl.experimental.pc_project(
+            related_mt, pca_loadings.loadings, pca_loadings.pca_af
+        )
+        related_mt = related_mt.annotate_cols(
+            scores=related_ht[related_mt.col_key].scores
+        )
 
 
 if __name__ == "__main__":
@@ -299,6 +316,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--compute_related_samples_to_drop",
         help="Flags related samples to drop",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--update_variant_filtered_pca_mt",
+        help="Update densified pca variant filtered MatrixTable",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--run_pc_project",
+        help="Project CCDG data onto gnomAD loadings",
         action="store_true",
     )
     args = parser.parse_args()
