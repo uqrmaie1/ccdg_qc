@@ -6,8 +6,8 @@ def get_ccdg_vds_path(data_type: str = "genomes") -> str:
     """
     Return path to CCDG VDS.
 
-    :param data_type: Whether data is from CCDG genomes or exomes, default is genomes
-    :return: path to CCDG vds
+    :param data_type: Whether data is from CCDG genomes or exomes, default is 'genomes'
+    :return: path to CCDG VDS
     """
     data_type = (
         "wgs_136k_recombine" if data_type == "genomes" else "split_200k_ccdg_exome"

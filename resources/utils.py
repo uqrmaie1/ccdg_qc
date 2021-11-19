@@ -51,7 +51,7 @@ def exomes_qc_intervals_ht(
         start_pos=hl.if_else(
             int_mt.interval.includes_start,
             int_mt.interval.start.position,
-            int_mt.interval.end.position + 1,
+            int_mt.interval.start.position + 1,
         ),
     )
     int_mt = int_mt.annotate_rows(int_len=int_mt.end_pos - int_mt.start_pos)
