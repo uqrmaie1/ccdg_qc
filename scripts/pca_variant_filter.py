@@ -389,7 +389,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--not-high-qual-ukbb-interval-only",
-        help="Do nont filter to high quality interval in UKBB exomes",
+        help="Do not filter to high quality interval in UKBB exomes",
         action="store_true",
     )
     parser.add_argument(
