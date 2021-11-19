@@ -162,7 +162,7 @@ def determine_pca_variants(
 
         if min_gnomad_v3_ac:
             logger.info(
-                "Filtering CCDG %s VDS to gnomAD v3.1.2 variants with adj filtered AC > %d...",
+                "Filtering CCDG %s VDS to gnomAD v3.1.2 variants with adj-filtered AC > %d...",
                 data_type,
                 min_gnomad_v3_ac,
             )
