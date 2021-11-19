@@ -323,7 +323,7 @@ def determine_pca_variants(
             mt = filter_ref_blocks(mt)
         else:
             ValueError(
-                "Only options for LD pruning are 'ccdg_genomes' and `gnomad_genomes`"
+                "Only options for LD pruning are `ccdg_genomes` and `gnomad_genomes`"
             )
 
         ht = hl.ld_prune(mt.GT, r2=ld_r2)
