@@ -55,7 +55,7 @@ def determine_pca_variants(
     :param autosomes_only: Whether to filter to variants in autosomes
     :param snv_only: Whether to filter to SNVs
     :param bi_allelic_only: Whether to filter to variants that are bi-allelic in both CCDG and gnomAD v3
-    :param adj_only: If set, only ADJ genotypes are kept. This filter is applied before the call rate and AF calculation
+    :param adj_only: If set, only ADJ genotypes (QD >= 2, FS <= 60 and MQ >= 30) are kept. This filter is applied before the call rate and AF calculation
     :param min_gnomad_v3_ac: Optional lower bound of AC for variants in gnomAD v3 genomes
     :param high_qual_ccdg_exome_interval_only: Whether to filter to high quality intervals in CCDG exomes
     :param high_qual_ukbb_exome_interval_only: Whether to filter to high quality intervals in UKBB 455K exomes
