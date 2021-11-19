@@ -6,7 +6,7 @@ def get_ccdg_vds_path(data_type: str = "genomes") -> str:
     """
     Return path to CCDG VDS.
 
-    :param data_type: Whether data is from genomes or exomes, default is genomes
+    :param data_type: Whether data is from CCDG genomes or exomes, default is genomes
     :return: path to CCDG vds
     """
     data_type = (
@@ -19,7 +19,7 @@ def get_sample_qc_root(data_type: str = "genomes", mt: bool = False) -> str:
     """
     Return path to CCDG sample QC root folder.
 
-    :param data_type: Whether data is from genomes or exomes, default is 'genomes'
+    :param data_type: Whether data is from CCDG genomes or exomes, default is 'genomes'
     :param mt: Whether path is for a MatrixTable, default is False
     :return: root of CCDG sample QC path
     """
@@ -30,7 +30,7 @@ def get_sample_manifest_ht(data_type: str = "exomes") -> str:
     """
     Return path to CCDG sample manifest table.
 
-    :param data_type: Whether data is for genomes or exomes, default is 'genomes'
+    :param data_type: Whether data is for CCDG genomes or exomes, default is 'genomes'
     :return: path to CCDG sample manifest table
     """
     data_type = "wgs" if data_type == "genomes" else "wes"
@@ -38,30 +38,7 @@ def get_sample_manifest_ht(data_type: str = "exomes") -> str:
     return ht
 
 
-def get_pre_filtered_var_ht_path(data_type: str = "genomes"):
-    """
-    Return path to a table of CCDG variants passing desired filters including:
-        - Autosomes only
-        - SNVs only
-        - gnomAD v3.1.2 AC filter
-        - CCDG high quality exome intervals
-        - UK Biobank high quality exome intervals
-    :param data_type: Whether data is from CCDG genomes or exomes, default is genomes
-    :return: path to hard filtered variant table
-    """
-    return f"{get_sample_qc_root(data_type=data_type, mt=False)}/variant_ccdg_{data_type}_pre_filtered.ht"
-
-
-def get_ccdg_interval_qc_ht_path():
-    """
-    Return path to a table of high quality intervals in CCDG exomes:
-
-    :return: path to CCDG exomes high quality intervals
-    """
-    return f'{get_sample_qc_root(data_type="exomes", mt=False)}/ccdg_exomes_high_qual_intervals.ht'
-
-
-def get_joint_pca_variants_ht_path():
+def get_joint_pca_variants_ht_path() -> str:
     """
     Return path to a table of variants with joint gnomAD v3.1.2 and CCDG genome allele frequencies and callrate:
 
@@ -71,13 +48,40 @@ def get_joint_pca_variants_ht_path():
 
 
 def get_pca_variants_path(
-    ld_pruned: bool = True, data: str = "ccdg_genomes", mt: bool = False
+    ld_pruned: bool = True,
+    data: str = "ccdg_genomes",
+    mt: bool = False,
 ) -> str:
     """
-    Return path to filtered variants.
+    Return path to filtered variants for ancestry PCA.
 
     :param ld_pruned: Whether the variants have been ld pruned
-    :return: path to filtered variant ht
+    :param data: Whether data is from CCDG genomes or gnomAD v3 genomes, default is 'ccdg_genomes'
+    :param mt: Whether path is for a MatrixTable, default is False -> hl.Table
+    :return: path to filtered MatrixTable or Table
     """
     ld_pruning_flag = f"{data}_ld_pruned" if ld_pruned else "pre_ld_pruning"
     return f"{get_sample_qc_root(data_type='', mt=mt)}{ld_pruning_flag}_combined_variants.{'mt' if mt else 'ht'}"
+
+
+def get_ccdg_results_path(
+    data_type: str = "genomes", mt: bool = False, result: str = None
+) -> str:
+    """
+    Return path to CCDG results.
+            Available results are:
+            - "pre_filtered_variants" - generated from pca_variant_filter.py -> determine_pca_variants() -> _initial_filter()
+            - "high_qual_intervals"
+            - "sample_qc_all"
+            - "sample_qc_bi_allelic"
+            - "sample_qc_multi_allelic"
+            - "sex"
+            - "pc_scores"
+            - "relatedness"
+
+    :param data_type: Whether data is from CCDG genomes or exomes, default is 'genomes'
+    :param mt: Whether path is for a MatrixTable, default is False -> hl.Table
+    :param result: Type of result
+    :return: path to CCDG result MatrixTable or Table
+    """
+    return f"{get_sample_qc_root(data_type=data_type, mt=mt)}/ccdg_{data_type}_{result}.{'mt' if mt else 'ht'}"
