@@ -25,7 +25,7 @@ def filter_to_autosomes(
         return hl.filter_intervals(mtds, [autosomes])
 
 
-# TODO: Might need to rethink how we define "high quality" CCDG exomes
+# TODO: Might need to rethink how we define "high quality" CCDG exome intervals
 def exomes_qc_intervals_ht(
     broad_prop_lower: float = 0.9,
     base_prop_lower: float = 0.5,
