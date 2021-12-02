@@ -1,4 +1,4 @@
-# TODO: Coordinate with Tim to make a hl.vds.filter_intervals that we can use instead
+# TODO: Coordinate with Tim to make a hl.vds.filter_to_autosomes that we can use instead
 # https://github.com/broadinstitute/gnomad_methods/blob/3536f87e249f0804f6762facce468597a9c441c6/gnomad/utils/filtering.py#L180
 def filter_to_autosomes(
     mtds: Union[hl.Table, hl.MatrixTable, hl.vds.VariantDataset]
