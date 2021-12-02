@@ -35,7 +35,9 @@ def determine_pca_variants(
     adj_only: bool = True,
     min_gnomad_v3_ac: Optional[int] = None,
     high_qual_ccdg_exome_interval_only: bool = False,
+    pct_samples_ccdg_exome_interval: float = 0.8,
     high_qual_ukbb_exome_interval_only: bool = False,
+    pct_samples_ukbb_exome_interval: float = 0.8,
     min_joint_af: float = 0.001,  # TODO: Konrad mentioned that he might want to lower this
     min_joint_callrate: float = 0.99,
     min_inbreeding_coeff_threshold: Optional[float] = -0.8,
@@ -58,7 +60,9 @@ def determine_pca_variants(
     :param adj_only: If set, only ADJ genotypes (QD >= 2, FS <= 60 and MQ >= 30) are kept. This filter is applied before the call rate and AF calculation
     :param min_gnomad_v3_ac: Optional lower bound of AC for variants in gnomAD v3 genomes
     :param high_qual_ccdg_exome_interval_only: Whether to filter to high quality intervals in CCDG exomes
+    :param float pct_samples_ukbb_exome_interval: Percent of samples with over 80% of bases having coverage of over 20x per interval
     :param high_qual_ukbb_exome_interval_only: Whether to filter to high quality intervals in UKBB 455K exomes
+    :param float pct_samples_ukbb: Percent of samples with coverage greater than 20x over the interval for filtering
     :param min_joint_af: Lower bound for combined MAF computed from CCDG and gnomAD v3 genomes
     :param min_joint_callrate: Lower bound for combined callrate computed from CCDG and gnomAD v3 genomes
     :param min_inbreeding_coeff_threshold: Minimum site inbreeding coefficient to keep. Not applied if set to `None`
@@ -138,6 +142,7 @@ def determine_pca_variants(
             - ccdg_{data_type}_AN
 
         The filtered and annotated rows are returned as a Table and are also checkpointed
+        :param data_type: Whether data is from genomes or exomes
 
         :return: Table of CCDG filtered variants
         """
@@ -175,7 +180,12 @@ def determine_pca_variants(
                 "Filtering CCDG %s VDS to high quality CCDG exome intervals...",
                 data_type,
             )
-            interval_qc_ht = hl.read_table(get_ccdg_interval_qc_ht_path())  # TODO: Create a checkpointed HT list of "good" intervals to use here instead
+            interval_qc_ht = hl.read_table(
+                get_ccdg_results_path(data_type="exomes", result="intervals")
+            )
+            interval_qc_ht = interval_qc_ht.filter(
+                interval_qc_ht["pct_broad_defined"] > pct_samples_ccdg_exome_interval
+            )
             vds = hl.vds.filter_intervals(
                 vds, intervals=interval_qc_ht.interval.collect(), keep=True
             )
@@ -194,7 +204,7 @@ def determine_pca_variants(
                 ukbb_interval_qc_path("broad", 7, "autosomes")
             )  # Note: freeze 7 is all included in gnomAD v4
             interval_qc_ht = interval_qc_ht.filter(
-                interval_qc_ht["pct_samples_20x"] > 0.85
+                interval_qc_ht["pct_samples_20x"] > pct_samples_ukbb_exome_interval
             )
             vds = hl.vds.filter_intervals(
                 vds, intervals=interval_qc_ht.interval.collect(), keep=True
@@ -220,7 +230,9 @@ def determine_pca_variants(
 
         mt = mt.annotate_rows(**annotation_expr)
         ht = mt.rows().checkpoint(
-            get_ccdg_results_path(data_type=data_type, mt=False, result='pre_filtered_variants'),
+            get_ccdg_results_path(
+                data_type=data_type, mt=False, result="pre_filtered_variants"
+            ),
             overwrite=overwrite,
             _read_if_exists=(not overwrite),
         )
@@ -303,13 +315,17 @@ def determine_pca_variants(
         filter_segdup=filter_segdup,
     )
 
-    ht.checkpoint(
+    ht = ht.checkpoint(
         get_pca_variants_path(ld_pruned=False),
         overwrite=overwrite,
         _read_if_exists=(not overwrite),
     )
 
     if ld_pruning:
+        # Whether this is still required?
+        logger.warning(
+            "The LD-prune step of this function requires non-preemptible workers only!"
+        )
         logger.info("Creating Table after LD pruning of %s...", ld_pruning_dataset)
         ht = hl.read_table(get_pca_variants_path(ld_pruned=False))
         if ld_pruning_dataset == "ccdg_genomes":
@@ -343,6 +359,9 @@ def determine_pca_variants(
 def main(args):
     hl.init(log=f"/variant_filter.log")
 
+    if args.update_ccdg_exome_interval_table:
+        exomes_qc_intervals_ht(args.pct_broad_samples_defined, overwrite=True)
+
     determine_pca_variants(
         autosomes_only=~args.not_autosomes_only,
         bi_allelic_only=~args.not_bi_allelic_only,
@@ -365,6 +384,17 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--update-ccdg-exome-interval-table",
+        help="Update CCDG exomes interval table",
+        action="store_true"
+    )
+    parser.add_argument(
+        "--pct-broad-samples-defined",
+        type=float,
+        help="Filter to intervals with percent of broad samples defined above this value",
+        default=0.8,
+    )
     parser.add_argument(
         "--not-autosomes-only", help="Do not filter to autosomes", action="store_true"
     )

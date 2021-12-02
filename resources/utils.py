@@ -26,18 +26,17 @@ def filter_to_autosomes(
 
 
 # TODO: Might need to rethink how we define "high quality" CCDG exome intervals
+# TODO: Wait for an updated interval matrix table with DP included (n_bases_over_20x per sample per interval)
 def exomes_qc_intervals_ht(
-    broad_prop_lower: float = 0.9,
-    base_prop_lower: float = 0.5,
+    pct_bases_20x: float = 0.8,
     overwrite: bool = False,
 ) -> hl.Table:
     """
-    Filter to high quality intervals for exomes QC.
+    Generate CCDG exomes interval table for exomes QC.
 
-    :param broad_prop_lower: Lower bound for proportion of broad samples defined per interval
-    :param base_prop_lower: Lower bound for proportion of bases defined per interval per sample
+    :param pct_bases_20x: Percent of bases with coverage greater than 20x over the interval
     :param overwrite: Whether to overwrite CCDG exomes interval QC HT
-    :return: high quality CCDG exomes interval table
+    :return: CCDG exomes interval table
     """
     ht = get_sample_manifest_ht("exomes")
     int_mt = hl.read_matrix_table(exomes_interval_mt_path)
@@ -56,25 +55,18 @@ def exomes_qc_intervals_ht(
     )
     int_mt = int_mt.annotate_rows(int_len=int_mt.end_pos - int_mt.start_pos)
     int_mt = int_mt.annotate_cols(center=ht[int_mt.col_id]["cohort"])
-    int_mt = int_mt.annotate_entries(prop_base=int_mt.n_bases / int_mt.int_len)
-    int_mt = int_mt.annotate_cols(
-        washu=hl.if_else(
-            (hl.is_defined(int_mt.center) & (int_mt.center == "sccs")), True, False
-        )
-    )
-    n_broad = int_mt.aggregate_cols(hl.agg.count_where(~int_mt.washu))
+    int_mt = int_mt.filter_cols(int_mt.center != "sccs")
     int_mt = int_mt.annotate_entries(
-        broad_defined=(~(int_mt.washu)) & (int_mt.prop_base > base_prop_lower)
-    )
+        pct_bases_20x=int_mt.n_bases_over_20x / int_mt.int_len
+    ) # presume the field will be called 'n_bases_over_20x'
+
+    n_broad = int_mt.count_cols()
+    int_mt = int_mt.annotate_entries(int_defined=(int_mt.pct_bases_20x > pct_bases_20x))
     int_mt = int_mt.annotate_rows(
-        broad_defined_prop=hl.agg.count_where(int_mt.broad_defined) / n_broad
-    )
-    # Filter intervals
-    int_mt = int_mt.filter_rows(int_mt.broad_defined_prop > broad_prop_lower)
-    int_ht = int_mt.rows().checkpoint(
-        get_ccdg_results_path(data_type="exomes", result="high_qual_intervals"),
+        pct_broad_defined=hl.agg.count_where(int_mt.int_defined) / n_broad
+    ).checkpoint(
+        get_ccdg_results_path(data_type="exomes", result="intervals"),
         overwrite=overwrite,
         _read_if_exists=(not overwrite),
     )
-
     return int_ht
