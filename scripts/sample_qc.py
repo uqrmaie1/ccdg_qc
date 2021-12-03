@@ -44,7 +44,7 @@ def get_qc_vds(
     :return: ccdg vds with chosen filters
     """
     vds = hl.vds.read_vds(get_vds_path(data_type))
-    if (data_type == "exomes") & interval_qc:
+    if data_type == "exomes" and interval_qc:
         logger.info("Filtering CCDG exomes VDS to high quality intervals...")
         int_ht = hl.read_table(
             get_ccdg_results_path(data_type=data_type, result="high_qual_intervals")
@@ -84,9 +84,7 @@ def compute_sample_qc(data_type: str = "genomes") -> hl.Table:
             "bi_allelic": bi_allelic_expr(vds.variant_data),
             "multi_allelic": ~bi_allelic_expr(vds.variant_data),
         },
-        tmp_ht_prefix=get_ccdg_results_path(data_type=data_type, result="sample_qc")[
-            :-3
-        ],
+        tmp_ht_prefix=get_ccdg_results_path(data_type=data_type, result="sample_qc")[:-3],
     )
 
     return sample_qc_ht.repartition(100)
