@@ -90,14 +90,18 @@ def determine_pca_variants(
         gnomad_ht = gnomad_ht.annotate(
             gnomad_genomes_hwe=hl.hardy_weinberg_test(
                 hl.int32(
-                    (gnomad_ht.gnomad_AN - gnomad_ht.gnomad_AC) / 2
+                    (gnomad_ht.gnomad_AN / 2)
+                    - gnomad_ht.gnomad_genomes_homozygote_count
+                    - (
+                        gnomad_ht.gnomad_AC
+                        - (gnomad_ht.gnomad_genomes_homozygote_count * 2)
+                    )
                 ),  # Num hom ref genotypes
                 hl.int32(
                     (
                         gnomad_ht.gnomad_AC
                         - (gnomad_ht.gnomad_genomes_homozygote_count * 2)
                     )
-                    / 2
                 ),  # Num het genotypes
                 gnomad_ht.gnomad_genomes_homozygote_count,  # Num hom alt genotypes
             ),
@@ -387,7 +391,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--update-ccdg-exome-interval-table",
         help="Update CCDG exomes interval table",
-        action="store_true"
+        action="store_true",
     )
     parser.add_argument(
         "--pct-broad-samples-defined",
