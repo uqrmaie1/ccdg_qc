@@ -181,7 +181,7 @@ def determine_pca_variants(
 
         if high_qual_ccdg_exome_interval_only:
             logger.info(
-                "Filtering CCDG %s VDS to high quality CCDG exome intervals...",
+                "Filtering CCDG %s VDS to high quality (>80%% of samples with 20X coverage) CCDG exome intervals...",
                 data_type,
             )
             interval_qc_ht = hl.read_table(
@@ -201,7 +201,7 @@ def determine_pca_variants(
                 )
 
             logger.info(
-                "Filtering CCDG %s VDS to high quality (>85%% of samples with 20X coverage) UK Biobank exome intervals...",
+                "Filtering CCDG %s VDS to high quality (>80%% of samples with 20X coverage) UK Biobank exome intervals...",
                 data_type,
             )
             interval_qc_ht = hl.read_table(
@@ -364,7 +364,7 @@ def main(args):
     hl.init(log=f"/variant_filter.log")
 
     if args.update_ccdg_exome_interval_table:
-        exomes_qc_intervals_ht(args.pct_broad_samples_defined, overwrite=True)
+        exomes_qc_intervals_ht(args.pct_bases_defined, overwrite=True)
 
     determine_pca_variants(
         autosomes_only=~args.not_autosomes_only,
@@ -394,9 +394,9 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
-        "--pct-broad-samples-defined",
+        "--pct-bases-defined",
         type=float,
-        help="Filter to intervals with percent of broad samples defined above this value",
+        help="Generate field for the interval table indicating intervals with percent of bases defined above this value",
         default=0.8,
     )
     parser.add_argument(
