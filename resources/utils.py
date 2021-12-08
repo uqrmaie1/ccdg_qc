@@ -62,9 +62,10 @@ def exomes_qc_intervals_ht(
 
     n_broad = int_mt.count_cols()
     int_mt = int_mt.annotate_entries(int_defined=(int_mt.pct_bases_20x > pct_bases_20x))
-    int_mt = int_mt.annotate_rows(
+    int_ht = int_mt.annotate_rows(
         pct_broad_defined=hl.agg.count_where(int_mt.int_defined) / n_broad
-    ).checkpoint(
+    ).rows()
+    int_ht = int_ht.checkpoint(
         get_ccdg_results_path(data_type="exomes", result="intervals"),
         overwrite=overwrite,
         _read_if_exists=(not overwrite),
