@@ -301,7 +301,7 @@ def main(args):
             fit=fit,
         )
 
-        pop_ht.checkpoint(
+        pop_ht = pop_ht.checkpoint(
             get_ccdg_results_path(data_type=data_type, result="pop_assignment"),
             overwrite=args.overwrite,
             _read_if_exists=not args.overwrite,
@@ -354,7 +354,7 @@ def main(args):
             get_ccdg_results_path(data_type=data_type, result="pc_scores")
         )
         sample_qc_ht = sample_qc_ht.select(
-            pc_scores[sample_qc_ht.key],
+            scores = pc_scores[sample_qc_ht.key]['scores'],
         )
         pop_ht = hl.read_table(
             get_ccdg_results_path(data_type=data_type, result="pop_assignment"),
