@@ -181,15 +181,13 @@ def determine_pca_variants(
 
         if high_qual_ccdg_exome_interval_only:
             logger.info(
-                "Filtering CCDG %s VDS to high quality (>80%% of samples with 20X coverage) CCDG exome intervals...",
+                f"Filtering CCDG %s VDS to high quality (>80%% of samples with {INTERVAL_DP}X coverage) CCDG exome intervals...",
                 data_type,
             )
             interval_qc_ht = hl.read_table(
-                get_ccdg_results_path(data_type="exomes", result="intervals")
+                get_ccdg_results_path(data_type="exomes", result=f"intervals_{INTERVAL_DP}x")
             )
-            interval_qc_ht = interval_qc_ht.filter(
-                interval_qc_ht["pct_broad_defined"] > pct_samples_ccdg_exome_interval
-            )
+            interval_qc_ht = interval_qc_ht.filter(interval_qc_ht.to_keep)
             vds = hl.vds.filter_intervals(
                 vds, intervals=interval_qc_ht.interval.collect(), keep=True
             )
@@ -235,7 +233,7 @@ def determine_pca_variants(
         mt = mt.annotate_rows(**annotation_expr)
         ht = mt.rows().checkpoint(
             get_ccdg_results_path(
-                data_type=data_type, mt=False, result="pre_filtered_variants"
+                data_type=data_type, mt=False, result=f"pre_filtered_variants_interval{INTERVAL_DP}x"
             ),
             overwrite=overwrite,
             _read_if_exists=(not overwrite),
@@ -364,7 +362,7 @@ def main(args):
     hl.init(log=f"/variant_filter.log")
 
     if args.update_ccdg_exome_interval_table:
-        exomes_qc_intervals_ht(args.pct_bases_defined, overwrite=True)
+        ccdg_interval_qc_ht(args.pct_samples_defined, overwrite=True)
 
     determine_pca_variants(
         autosomes_only=~args.not_autosomes_only,
@@ -394,7 +392,7 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
-        "--pct-bases-defined",
+        "--pct-samples-defined",
         type=float,
         help="Generate field for the interval table indicating intervals with percent of bases defined above this value",
         default=0.8,

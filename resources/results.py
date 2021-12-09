@@ -1,5 +1,7 @@
 ccdg_bucket = "gs://ccdg"
-exomes_interval_mt_path = "gs://ccdg-30day-temp/dking/iG4Vz/total-final-result.mt"
+INTERVAL_DP = 10
+exomes_interval_mt_path = f'gs://ccdg/interval_qc/ccdg_exome_interval_qc_dp_gte_{INTERVAL_DP}.mt'
+interval_path = "gs://gcp-public-data--broad-references/hg38/v0/exome_calling_regions.v1.interval_list"
 
 
 def get_ccdg_vds_path(data_type: str = "genomes") -> str:
