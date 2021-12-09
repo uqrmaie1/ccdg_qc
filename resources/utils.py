@@ -22,9 +22,9 @@ def filter_to_autosomes(
     )
 
     if isinstance(mtds, hl.vds.VariantDataset):
-        return hl.vds.filter_intervals(mtds, [autosomes])
+        return hl.vds.filter_intervals(mtds,[autosomes], keep=True)
     else:
-        return hl.filter_intervals(mtds, [autosomes])
+        return hl.filter_intervals(mtds, [autosomes], keep=True)
 
 
 def annotate_exomes_interval_mt(pct_bases_defined: float = 0.8):
