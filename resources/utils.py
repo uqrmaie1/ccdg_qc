@@ -1,4 +1,7 @@
 from .results import *
+from typing import Optional, Union
+from gnomad.utils.reference_genome import get_reference_genome
+import hail as hl
 
 # TODO: Coordinate with Tim to make a hl.vds.filter_to_autosomes that we can use instead
 # https://github.com/broadinstitute/gnomad_methods/blob/3536f87e249f0804f6762facce468597a9c441c6/gnomad/utils/filtering.py#L180
@@ -22,7 +25,7 @@ def filter_to_autosomes(
     )
 
     if isinstance(mtds, hl.vds.VariantDataset):
-        return hl.vds.filter_intervals(mtds,[autosomes], keep=True)
+        return hl.vds.filter_intervals(mtds, [autosomes], keep=True)
     else:
         return hl.filter_intervals(mtds, [autosomes], keep=True)
 
@@ -30,7 +33,7 @@ def filter_to_autosomes(
 def annotate_exomes_interval_mt(pct_bases_defined: float = 0.8):
     int_mt = hl.read_matrix_table(exomes_interval_mt_path)
     ht = get_sample_manifest_ht("exomes")
-    lst = hl.import_locus_intervals(interval_path, reference_genome="GRCh38")
+    lst = hl.import_locus_intervals(exomes_interval_list, reference_genome="GRCh38")
 
     int_mt = int_mt.annotate_rows(
         end_pos=hl.if_else(

@@ -23,14 +23,6 @@ from gnomad.sample_qc.ancestry import pc_project, assign_population_pcs
 
 from ccdg_qc.resources import *
 
-path_to_gnomad_rf = (
-    "gs://gnomad-public-requester-pays/release/3.1/pca/gnomad.v3.1.RF_fit.pkl"
-)
-path_to_gnomad_loadings = (
-    "gs://gnomad-public-requester-pays/release/3.1/pca/gnomad.v3.1.pca_loadings.ht"
-)
-
-
 logging.basicConfig(format="%(levelname)s (%(name)s %(lineno)s): %(message)s")
 logger = logging.getLogger("CCDG_sample_qc")
 logger.setLevel(logging.INFO)
@@ -38,11 +30,9 @@ logger.setLevel(logging.INFO)
 
 def get_qc_vds(
     data_type: str = "genomes",
-    pre_filter_variants: bool = False,
     split: bool = False,
     autosome_only: bool = False,
     interval_qc: bool = False,
-    pca_samples_exome_interval: float = 0.8,
 ) -> hl.vds.VariantDataset:
     """
     Wrapper function to get ccdg vds with desired filtering
@@ -52,13 +42,13 @@ def get_qc_vds(
     :param interval_qc: Whether to filter to high quality intervals for exomes QC, default is False
     :return: ccdg vds with chosen filters
     """
-    vds = hl.vds.read_vds(get_vds_path(data_type))
+    vds = get_ccdg_vds(data_type)
     if data_type == "exomes" and interval_qc:
         logger.info("Filtering CCDG exomes VDS to high quality intervals...")
         int_ht = hl.read_table(
-            get_ccdg_results_path(data_type=data_type, result="intervals")
+            get_ccdg_results_path(data_type=data_type, result=f"intervals_{INTERVAL_DP}x")
         )
-        int_ht = int_ht.filter(int_ht["pct_broad_defined"] > pca_samples_exome_interval)
+        int_ht = int_ht.filter(int_ht['to_keep'])
         vds = hl.vds.filter_intervals(
             vds, intervals=int_ht.interval.collect(), keep=True
         )
@@ -87,6 +77,7 @@ def compute_sample_qc(data_type: str = "genomes") -> hl.Table:
         data_type=data_type,
         autosome_only=True,
         split=True,
+        interval_qc=True,
     )
     # Use modified compute_stratified_sample_qc with the vds option
     sample_qc_ht = compute_stratified_sample_qc(
@@ -95,10 +86,180 @@ def compute_sample_qc(data_type: str = "genomes") -> hl.Table:
             "bi_allelic": bi_allelic_expr(vds.variant_data),
             "multi_allelic": ~bi_allelic_expr(vds.variant_data),
         },
-        tmp_ht_prefix=get_ccdg_results_path(data_type=data_type, result="sample_qc")[:-3],
+        tmp_ht_prefix=get_ccdg_results_path(data_type=data_type, result="sample_qc")[
+            :-3
+        ],
     )
 
     return sample_qc_ht.repartition(100)
+
+def compute_sex(data_type: str = "genomes", aaf_threshold: float = 0.001, f_stat_cutoff: float = 0.5) -> hl.Table:
+    """
+    Perform sample QC on the split VDS table using `compute_stratified_sample_qc`.
+    :param data_type: Whether data is from genomes or exomes, default is genomes
+    :param aaf_threshold: Minimum alternate allele frequency to be used in f-stat calculations.
+    :param f_stat_cutoff: f-stat to roughly divide 'XX' from 'XY' samples. Assumes XX samples are below cutoff and XY are above cutoff.
+    :return: Table containing imputed sex metrics
+    :rtype: hl.Table
+    """
+    logger.info("Computing sample QC on CCDG %s VDS", data_type)
+    vds = get_qc_vds(
+        data_type=data_type,
+        autosome_only=False,
+        split=True,
+        interval_qc=True
+    )
+
+    calling_intervals = get_calling_intervals_ht(data_type)
+    calling_intervals = calling_intervals.filter(calling_intervals.to_keep)
+
+    sex_ht = annotate_sex(
+        vds,
+        included_intervals=calling_intervals,
+        normalization_contig = "chr20",
+        reference_genome = "GRCh38",
+        gt_expr = "GT",
+        f_stat_cutoff = f_stat_cutoff,
+        aaf_threshold = aaf_threshold,
+    )
+
+    return sex_ht
+
+
+def annotate_sex(
+    mtds: Union[hl.MatrixTable, hl.vds.VariantDataset],
+    is_sparse: bool = True,
+    excluded_intervals: Optional[hl.Table] = None,
+    included_intervals: Optional[hl.Table] = None,
+    normalization_contig: str = "chr20",
+    reference_genome: str = "GRCh38",
+    sites_ht: Optional[hl.Table] = None,
+    aaf_expr: Optional[str] = None,
+    gt_expr: str = "GT",
+    f_stat_cutoff: float = 0.5,
+    aaf_threshold: float = 0.001,
+) -> hl.Table:
+    """
+    Impute sample sex based on X-chromosome heterozygosity and sex chromosome ploidy.
+
+    Return Table with the following fields:
+        - s (str): Sample
+        - chr20_mean_dp (float32): Sample's mean coverage over chromosome 20.
+        - chrX_mean_dp (float32): Sample's mean coverage over chromosome X.
+        - chrY_mean_dp (float32): Sample's mean coverage over chromosome Y.
+        - chrX_ploidy (float32): Sample's imputed ploidy over chromosome X.
+        - chrY_ploidy (float32): Sample's imputed ploidy over chromosome Y.
+        - f_stat (float64): Sample f-stat. Calculated using hl.impute_sex.
+        - n_called (int64): Number of variants with a genotype call. Calculated using hl.impute_sex.
+        - expected_homs (float64): Expected number of homozygotes. Calculated using hl.impute_sex.
+        - observed_homs (int64): Expected number of homozygotes. Calculated using hl.impute_sex.
+        - X_karyotype (str): Sample's chromosome X karyotype.
+        - Y_karyotype (str): Sample's chromosome Y karyotype.
+        - sex_karyotype (str): Sample's sex karyotype.
+
+    :param mtds: Input MatrixTable or VariantDataset
+    :param bool is_sparse: Whether input MatrixTable is in sparse data format
+    :param excluded_intervals: Optional table of intervals to exclude from the computation.
+    :param included_intervals: Optional table of intervals to use in the computation. REQUIRED for exomes.
+    :param normalization_contig: Which chromosome to use to normalize sex chromosome coverage. Used in determining sex chromosome ploidies.
+    :param reference_genome: Reference genome used for constructing interval list. Default: 'GRCh38'
+    :param sites_ht: Optional Table to use. If present, filters input MatrixTable to sites in this Table prior to imputing sex,
+                    and pulls alternate allele frequency from this Table.
+    :param aaf_expr: Optional. Name of field in input MatrixTable with alternate allele frequency.
+    :param gt_expr: Name of entry field storing the genotype. Default: 'GT'
+    :param f_stat_cutoff: f-stat to roughly divide 'XX' from 'XY' samples. Assumes XX samples are below cutoff and XY are above cutoff.
+    :param float aaf_threshold: Minimum alternate allele frequency to be used in f-stat calculations.
+    :return: Table of samples and their imputed sex karyotypes.
+    """
+    logger.info("Imputing sex chromosome ploidies...")
+
+    is_vds = isinstance(mtds, hl.vds.VariantDataset)
+    if is_vds:
+        if excluded_intervals is not None:
+            raise NotImplementedError(
+                "excluded_intervals is not used when imputing sex chromosome ploidy for VDS"
+            )
+        ploidy_ht = hl.vds.impute_sex_chromosome_ploidy(
+            mtds,
+            calling_intervals=included_intervals,
+            normalization_contig=normalization_contig,
+        )
+        ploidy_ht = ploidy_ht.rename(
+            {"x_ploidy": "chrX_ploidy", "y_ploidy": "chrY_ploidy"}
+        )
+        mt = mtds.variant_data
+    else:
+        mt = mtds
+        if is_sparse:
+            ploidy_ht = impute_sex_ploidy(
+                mt, excluded_intervals, included_intervals, normalization_contig
+            )
+        else:
+            raise NotImplementedError(
+                "Imputing sex ploidy does not exist yet for dense data."
+            )
+
+    x_contigs = get_reference_genome(mt.locus).x_contigs
+    logger.info("Filtering mt to biallelic SNPs in X contigs: %s", x_contigs)
+    if "was_split" in list(mt.row):
+        mt = mt.filter_rows((~mt.was_split) & hl.is_snp(mt.alleles[0], mt.alleles[1]))
+    else:
+        mt = mt.filter_rows(
+            (hl.len(mt.alleles) == 2) & hl.is_snp(mt.alleles[0], mt.alleles[1])
+        )
+
+    mt = hl.filter_intervals(
+        mt,
+        [
+            hl.parse_locus_interval(contig, reference_genome=reference_genome)
+            for contig in x_contigs
+        ],
+        keep=True,
+    )
+
+    if sites_ht is not None:
+        if aaf_expr == None:
+            logger.warning(
+                "sites_ht was provided, but aaf_expr is missing. Assuming name of field with alternate allele frequency is 'AF'."
+            )
+            aaf_expr = "AF"
+        logger.info("Filtering to provided sites")
+        mt = mt.annotate_rows(**sites_ht[mt.row_key])
+        mt = mt.filter_rows(hl.is_defined(mt[aaf_expr]))
+
+    logger.info("Calculating inbreeding coefficient on chrX")
+    sex_ht = hl.impute_sex(
+        mt[gt_expr],
+        aaf_threshold=aaf_threshold,
+        male_threshold=f_stat_cutoff,
+        female_threshold=f_stat_cutoff,
+        aaf=aaf_expr,
+    )
+
+    logger.info("Annotating sex ht with sex chromosome ploidies")
+    sex_ht = sex_ht.annotate(**ploidy_ht[sex_ht.key])
+
+    logger.info("Inferring sex karyotypes")
+    x_ploidy_cutoffs, y_ploidy_cutoffs = get_ploidy_cutoffs(sex_ht, f_stat_cutoff)
+    sex_ht = sex_ht.annotate_globals(
+        x_ploidy_cutoffs=hl.struct(
+            upper_cutoff_X=x_ploidy_cutoffs[0],
+            lower_cutoff_XX=x_ploidy_cutoffs[1][0],
+            upper_cutoff_XX=x_ploidy_cutoffs[1][1],
+            lower_cutoff_XXX=x_ploidy_cutoffs[2],
+        ),
+        y_ploidy_cutoffs=hl.struct(
+            lower_cutoff_Y=y_ploidy_cutoffs[0][0],
+            upper_cutoff_Y=y_ploidy_cutoffs[0][1],
+            lower_cutoff_YY=y_ploidy_cutoffs[1],
+        ),
+        f_stat_cutoff=f_stat_cutoff,
+    )
+    return sex_ht.annotate(
+        **get_sex_expr(
+            sex_ht.chrX_ploidy, sex_ht.chrY_ploidy, x_ploidy_cutoffs, y_ploidy_cutoffs
+        )
+    )
 
 
 def compute_relatedness(
@@ -173,12 +334,12 @@ def main(args):
             get_ccdg_results_path(data_type=data_type, result="sample_qc_all"),
             overwrite=args.overwrite,
         )
-    ##### Modify when hl.vds.impute_sex() is available
-    # if args.impute_sex:
-    #     compute_sex().write(
-    #         get_ccdg_results_path(data_type=data_type, result="sex"),
-    #         overwrite=args.overwrite,
-    #     )
+
+    if args.impute_sex:
+        compute_sex(data_type).write(
+            get_ccdg_results_path(data_type=data_type, result="sex"),
+            overwrite=args.overwrite,
+        )
     # elif args.reannotate_sex:
     #     reannotate_sex(
     #         args.min_cov,
@@ -309,11 +470,13 @@ def main(args):
         pop_ht.transmute(
             **{f"PC{i + 1}": pop_ht.pca_scores[i] for i in range(n_pcs)}
         ).export(
-            get_ccdg_results_path(data_type=data_type, result="pop_assignment")[:-2] + "tsv"
+            get_ccdg_results_path(data_type=data_type, result="pop_assignment")[:-2]
+            + "tsv"
         )
 
         with hl.hadoop_open(
-            get_ccdg_results_path(data_type=data_type, result="pop_RF_fit")[:-2] + "pickle",
+            get_ccdg_results_path(data_type=data_type, result="pop_RF_fit")[:-2]
+            + "pickle",
             "wb",
         ) as out:
             pickle.dump(rf_model, out)
@@ -354,7 +517,7 @@ def main(args):
             get_ccdg_results_path(data_type=data_type, result="pc_scores")
         )
         sample_qc_ht = sample_qc_ht.select(
-            scores = pc_scores[sample_qc_ht.key]['scores'],
+            scores=pc_scores[sample_qc_ht.key]["scores"],
         )
         pop_ht = hl.read_table(
             get_ccdg_results_path(data_type=data_type, result="pop_assignment"),
